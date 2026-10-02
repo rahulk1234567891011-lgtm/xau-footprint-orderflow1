@@ -61,6 +61,7 @@ const state = {
   },
   priceLevels: new Map(),
   recentTrades: [],
+  flowWindow: [],
   lastSignal: null,
   lastError: null
 };
@@ -148,13 +149,55 @@ function processTrade(data) {
   state.lastSide = side;
   state.lastError = null;
 
-  state.recentTrades.push({
+  const tradeRecord = {
     time: state.lastTradeAt,
+    timestamp,
     price,
     quantity,
     side
-  });
-  if (state.recentTrades.length > 100) state.recentTrades.shift();
+  };
+  state.recentTrades.push(tradeRecord);
+  if (state.recentTrades.length > 1000) state.recentTrades.shift();
+  state.flowWindow.push(tradeRecord);
+  const cutoff = timestamp - 5 * 60 * 1000;
+  while (state.flowWindow.length && state.flowWindow[0].timestamp < cutoff) {
+    state.flowWindow.shift();
+  }
+}
+
+
+function getLiveFlowStats() {
+  const now = Date.now();
+  const m1Cutoff = now - 60 * 1000;
+  const m5Cutoff = now - 5 * 60 * 1000;
+  let m1BuyTrades = 0, m1SellTrades = 0, m1BuyVolume = 0, m1SellVolume = 0;
+  let m5BuyTrades = 0, m5SellTrades = 0, m5BuyVolume = 0, m5SellVolume = 0;
+
+  for (const t of state.flowWindow) {
+    if (t.timestamp >= m5Cutoff) {
+      if (t.side === "BUY") { m5BuyTrades++; m5BuyVolume += t.quantity; }
+      else { m5SellTrades++; m5SellVolume += t.quantity; }
+    }
+    if (t.timestamp >= m1Cutoff) {
+      if (t.side === "BUY") { m1BuyTrades++; m1BuyVolume += t.quantity; }
+      else { m1SellTrades++; m1SellVolume += t.quantity; }
+    }
+  }
+
+  return {
+    M1: {
+      buyTrades: m1BuyTrades,
+      sellTrades: m1SellTrades,
+      buyVolume: Number(m1BuyVolume.toFixed(8)),
+      sellVolume: Number(m1SellVolume.toFixed(8))
+    },
+    M5: {
+      buyTrades: m5BuyTrades,
+      sellTrades: m5SellTrades,
+      buyVolume: Number(m5BuyVolume.toFixed(8)),
+      sellVolume: Number(m5SellVolume.toFixed(8))
+    }
+  };
 }
 
 function calculateSignal() {
@@ -270,6 +313,7 @@ function buildExecutionSignal() {
     lots: Number.isFinite(LOTS) && LOTS > 0 ? LOTS : 0.05,
     priceSource: "Binance Futures XAUUSDT aggTrade",
     currentPrice: state.lastPrice,
+    liveFlow: getLiveFlowStats(),
     levels: diagnostic.levels || null,
     diagnostic
   };
@@ -422,6 +466,7 @@ app.get("/footprint", (req, res) => {
       totalTrades: candle.trades
     },
     recentTrades: state.recentTrades.slice(-20),
+    liveFlow: getLiveFlowStats(),
     lastError: state.lastError
   });
 });
