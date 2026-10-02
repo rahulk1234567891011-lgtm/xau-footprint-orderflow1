@@ -1,9 +1,13 @@
 {
   "name": "xau-footprint-orderflow",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "express": "^5.1.0",
